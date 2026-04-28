@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IP Lookup</title>
+  <link rel="icon" type="image/x-icon" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', sans-serif;
+      color: #fff;
+      padding: 24px 16px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 400px;
+      border: 1px solid #222;
+      border-radius: 16px;
+      padding: clamp(32px,6vw,52px) clamp(24px,6vw,48px);
+      animation: cardIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+      transition: max-width 0.4s cubic-bezier(0.16,1,0.3,1);
+    }
+    .card.wide { max-width: 900px; }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Wordmark ── */
+    .wordmark { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 36px; }
+    .wordmark i { font-size: 1.1rem; color: #fff; }
+    .wordmark-text { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; }
+    .wordmark-text span { font-weight: 300; color: #444; }
+
+    .rule { height: 1px; background: #1a1a1a; margin-bottom: 32px; }
+
+    h1 { font-size: clamp(1.2rem,4vw,1.5rem); font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px; }
+    .subtitle { font-size: 0.8rem; color: #555; line-height: 1.6; margin-bottom: 28px; }
+
+    /* ── Code boxes ── */
+    .code-boxes { display: flex; gap: clamp(6px,2vw,12px); justify-content: center; margin-bottom: 20px; }
+    .code-box {
+      width: clamp(44px,14vw,60px); height: clamp(52px,15vw,68px);
+      background: transparent; border: 1px solid #2a2a2a; border-radius: 8px;
+      color: #fff; font-family: 'Courier New', monospace;
+      font-size: clamp(1.3rem,4vw,1.7rem); font-weight: bold;
+      text-align: center; text-transform: uppercase;
+      outline: none; caret-color: #fff;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      -webkit-appearance: none; appearance: none;
+    }
+    .code-box:focus { border-color: #fff; background: #0d0d0d; }
+    .code-box.filled { border-color: #555; }
+    .code-box.incorrect { border-color: #fff; background: #111; color: #666; animation: incorrectPulse 0.4s ease forwards; }
+    @keyframes incorrectPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.25); }
+      50%  { box-shadow: 0 0 0 4px rgba(255,255,255,0.08); }
+      100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+    }
+    .code-boxes.is-locked .code-box { border-color: #1c1c1c; background: #080808; color: #2a2a2a; cursor: not-allowed; }
+
+    /* ── Buttons ── */
+    button {
+      width: 100%; padding: 14px;
+      background: #fff; color: #000;
+      border: 1px solid #fff; border-radius: 8px;
+      font-family: 'Inter', sans-serif; font-size: 0.82rem;
+      font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    button:hover:not(:disabled) { background: transparent; color: #fff; }
+    button:disabled { background: transparent; color: #333; border-color: #1c1c1c; cursor: not-allowed; }
+    #submitBtn.is-locked { border-color: #1c1c1c; color: #2a2a2a; }
+
+    .btn-sm {
+      width: auto; padding: 8px 14px;
+      font-size: 0.72rem; letter-spacing: 0.1em;
+    }
+    .btn-ghost {
+      background: transparent; color: #555; border-color: #2a2a2a;
+    }
+    .btn-ghost:hover:not(:disabled) { color: #fff; border-color: #555; background: transparent; }
+    .btn-danger { background: transparent; color: #555; border-color: #2a2a2a; }
+    .btn-danger:hover:not(:disabled) { color: #ff4444; border-color: #ff4444; background: transparent; }
+
+    .spinner { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #555; border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Messages ── */
+    .msg { margin-top: 14px; font-size: 0.76rem; min-height: 1.1em; letter-spacing: 0.03em; opacity: 0; transform: translateY(-4px); transition: opacity 0.2s, transform 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .msg.visible { opacity: 1; transform: translateY(0); }
+    .msg.error { color: #fff; }
+    .msg.info  { color: #555; }
+
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)} 40%{transform:translateX(7px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+    .shake { animation: shake 0.38s ease; }
+
+    /* ── Lockout ── */
+    #lockoutPanel { display: none; }
+    #lockoutPanel.visible { display: block; animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    .lockout-body { margin-top: 28px; padding-top: 28px; border-top: 1px solid #1a1a1a; }
+    .lockout-icon-wrap { width: 48px; height: 48px; border: 1px solid #2a2a2a; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
+    .lockout-icon-wrap i { font-size: 1.1rem; color: #fff; }
+    .lockout-title { font-size: clamp(1.05rem,3.5vw,1.25rem); font-weight: 600; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .lockout-sub { font-size: 0.78rem; color: #555; line-height: 1.65; margin-bottom: 22px; }
+    .master-input { width: 100%; padding: 13px 16px; background: transparent; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff; font-family: 'Courier New', monospace; font-size: 1rem; letter-spacing: 0.18em; text-align: center; outline: none; caret-color: #fff; transition: border-color 0.15s, background 0.15s; margin-bottom: 12px; -webkit-appearance: none; appearance: none; }
+    .master-input:focus { border-color: #fff; background: #0d0d0d; }
+    .master-input::placeholder { color: #333; letter-spacing: 0.06em; font-family: 'Inter', sans-serif; }
+
+    /* ── Dashboard view ── */
+    #dashView { display: none; animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+    #dashView.visible { display: block; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 2px; margin-bottom: 28px; background: #0d0d0d; border: 1px solid #1a1a1a; border-radius: 8px; padding: 3px; }
+    .tab { flex: 1; padding: 9px; background: transparent; border: none; border-radius: 6px; font-family: 'Inter', sans-serif; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #555; cursor: pointer; transition: background 0.15s, color 0.15s; display: flex; align-items: center; justify-content: center; gap: 7px; }
+    .tab:hover:not(:disabled) { color: #888; background: transparent; }
+    .tab.active { background: #1a1a1a; color: #fff; }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeUp 0.25s ease both; }
+
+    /* ── Input ── */
+    .input-wrap { position: relative; margin-bottom: 12px; }
+    .input-wrap i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #333; font-size: 0.8rem; pointer-events: none; }
+    input[type="text"] { width: 100%; padding: 13px 14px 13px 38px; background: transparent; border: 1px solid #2a2a2a; border-radius: 8px; color: #fff; font-family: 'Courier New', monospace; font-size: 0.9rem; letter-spacing: 0.06em; outline: none; caret-color: #fff; transition: border-color 0.15s, background 0.15s; -webkit-appearance: none; }
+    input[type="text"]:focus { border-color: #fff; background: #0d0d0d; }
+    input[type="text"]::placeholder { color: #333; font-family: 'Inter', sans-serif; letter-spacing: 0; }
+
+    /* ── Lookup results ── */
+    #results { display: none; margin-top: 28px; padding-top: 28px; border-top: 1px solid #1a1a1a; }
+    .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .result-flag { width: 28px; height: 20px; border-radius: 3px; object-fit: cover; border: 1px solid #222; flex-shrink: 0; }
+    .result-ip { font-family: 'Courier New', monospace; font-size: 1rem; font-weight: 600; letter-spacing: 0.06em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-country { font-size: 0.72rem; color: #555; letter-spacing: 0.05em; text-transform: uppercase; }
+    #results-inner { display: flex; gap: 16px; align-items: flex-start; }
+    #results-data { flex: 1; min-width: 0; }
+    .result-grid { display: flex; flex-direction: column; gap: 1px; background: #111; border-radius: 8px; overflow: hidden; border: 1px solid #1a1a1a; }
+    .result-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 12px; background: #000; font-size: 0.78rem; }
+    .result-label { color: #444; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+    .result-value { color: #ccc; text-align: right; word-break: break-all; }
+    .result-value.mono { font-family: 'Courier New', monospace; font-size: 0.75rem; }
+    #map { width: 340px; flex-shrink: 0; min-height: 260px; border-radius: 8px; overflow: hidden; border: 1px solid #1a1a1a; display: none; }
+    .leaflet-container { background: #0d0d0d; }
+    .leaflet-tile { filter: grayscale(1) invert(1) brightness(0.85); }
+
+    /* ── Links tab ── */
+    .links-form { display: flex; gap: 8px; margin-bottom: 24px; }
+    .links-form .input-wrap { flex: 1; margin-bottom: 0; }
+    .links-form .input-wrap:first-child { flex: 0 0 160px; }
+
+    .section-label { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #444; margin-bottom: 12px; }
+
+    .link-card { border: 1px solid #1a1a1a; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+    .link-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #0a0a0a; gap: 10px; cursor: pointer; }
+    .link-card-header:hover { background: #0d0d0d; }
+    .link-name { font-size: 0.85rem; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .link-meta { font-size: 0.7rem; color: #444; white-space: nowrap; }
+    .link-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .link-url-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #050505; border-top: 1px solid #111; }
+    .link-url { font-family: 'Courier New', monospace; font-size: 0.72rem; color: #555; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Clicks table */
+    .clicks-table { display: none; border-top: 1px solid #111; }
+    .clicks-table.open { display: block; }
+    .clicks-header { display: grid; grid-template-columns: 130px 1fr 1fr 110px; gap: 8px; padding: 8px 14px; font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #333; background: #050505; }
+    .click-row { display: grid; grid-template-columns: 130px 1fr 1fr 110px; gap: 8px; padding: 8px 14px; font-size: 0.75rem; border-top: 1px solid #0d0d0d; background: #000; }
+    .click-row:hover { background: #060606; }
+    .click-ip { font-family: 'Courier New', monospace; font-size: 0.72rem; color: #ccc; }
+    .click-loc { color: #777; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .click-isp { color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .click-time { color: #444; font-size: 0.7rem; text-align: right; }
+    .clicks-empty { padding: 16px 14px; font-size: 0.75rem; color: #333; text-align: center; background: #000; }
+
+    .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 50px; background: #1a1a1a; color: #555; font-size: 0.62rem; font-weight: 600; }
+    .badge.has-clicks { background: #1a1a1a; color: #fff; }
+
+    /* ── Footer ── */
+    .footer-rule { height: 1px; background: #1a1a1a; margin: 28px 0 20px; }
+    .footer { font-size: 0.72rem; color: #333; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .footer strong { color: #555; font-weight: 500; }
+
+    @media (max-width: 600px) {
+      .card { border: none; border-top: 1px solid #1a1a1a; border-radius: 0; padding: 36px 20px; }
+      #results-inner { flex-direction: column; }
+      #map { width: 100%; min-height: 200px; }
+      .links-form { flex-direction: column; }
+      .links-form .input-wrap:first-child { flex: unset; }
+      .clicks-header, .click-row { grid-template-columns: 110px 1fr 90px; }
+      .click-isp { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+
+    <div class="wordmark">
+      <i class="fa-solid fa-location-dot"></i>
+      <div class="wordmark-text">IP<span>Locate</span></div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- ── Passcode view ── -->
+    <div id="passcodeView">
+      <h1>Access Required</h1>
+      <div class="subtitle">Enter your 5-digit access code<br>to use this service.</div>
+
+      <div class="code-boxes" id="codeBoxes">
+        <input class="code-box" maxlength="1" autocomplete="off" spellcheck="false" inputmode="text" />
+        <input class="code-box" maxlength="1" autocomplete="off" spellcheck="false" inputmode="text" />
+        <input class="code-box" maxlength="1" autocomplete="off" spellcheck="false" inputmode="text" />
+        <input class="code-box" maxlength="1" autocomplete="off" spellcheck="false" inputmode="text" />
+        <input class="code-box" maxlength="1" autocomplete="off" spellcheck="false" inputmode="text" />
+      </div>
+
+      <button id="submitBtn" onclick="submitCode()">
+        <i class="fa-solid fa-arrow-right-to-bracket"></i>
+        Continue
+      </button>
+
+      <div class="msg error" id="error"></div>
+      <div class="msg info"  id="status"></div>
+
+      <div id="lockoutPanel">
+        <div class="lockout-body">
+          <div class="lockout-icon-wrap"><i class="fa-solid fa-lock"></i></div>
+          <div class="lockout-title">Access Locked</div>
+          <div class="lockout-sub">3 incorrect attempts detected.<br>Enter the master code to unlock.</div>
+          <input id="masterInput" class="master-input" type="password" maxlength="20" placeholder="Enter master code" autocomplete="off" spellcheck="false" />
+          <button id="masterBtn" onclick="submitMasterCode()">
+            <i class="fa-solid fa-unlock"></i> Unlock
+          </button>
+          <div class="msg error" id="masterError"></div>
+          <div class="msg info"  id="masterStatus"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Dashboard view ── -->
+    <div id="dashView">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('lookup')"><i class="fa-solid fa-magnifying-glass"></i> Lookup</button>
+        <button class="tab" onclick="switchTab('links')"><i class="fa-solid fa-link"></i> Links</button>
+      </div>
+
+      <!-- Lookup tab -->
+      <div class="tab-panel active" id="tab-lookup">
+        <div class="input-wrap">
+          <i class="fa-solid fa-network-wired"></i>
+          <input type="text" id="ipInput" placeholder="e.g. 8.8.8.8  (blank = your IP)" autocomplete="off" spellcheck="false" />
+        </div>
+        <button id="lookupBtn" onclick="lookup()">
+          <i class="fa-solid fa-magnifying-glass"></i> Look Up
+        </button>
+        <div class="msg error" id="lookupMsg"></div>
+        <div id="results">
+          <div class="result-header">
+            <img class="result-flag" id="resFlag" src="" alt="" />
+            <div>
+              <div class="result-ip" id="resIp"></div>
+              <div class="result-country" id="resCountry"></div>
+            </div>
+          </div>
+          <div id="results-inner">
+            <div id="results-data"><div class="result-grid" id="resGrid"></div></div>
+            <div id="map"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Links tab -->
+      <div class="tab-panel" id="tab-links">
+        <div class="section-label">Create Tracking Link</div>
+        <div class="links-form">
+          <div class="input-wrap">
+            <i class="fa-solid fa-tag"></i>
+            <input type="text" id="linkName" placeholder="Name" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="input-wrap" style="flex:2;">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            <input type="text" id="linkRedirect" placeholder="Redirect URL (e.g. https://google.com)" autocomplete="off" spellcheck="false" />
+          </div>
+          <button class="btn-sm" id="createLinkBtn" onclick="createLink()" style="width:auto;flex-shrink:0;">
+            <i class="fa-solid fa-plus"></i> Create
+          </button>
+        </div>
+        <div class="msg error" id="linkMsg" style="justify-content:flex-start;margin-top:-4px;margin-bottom:16px;"></div>
+
+        <div class="section-label">Your Links</div>
+        <div id="linksList"><div style="font-size:0.75rem;color:#333;text-align:center;padding:20px;">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="footer-rule"></div>
+    <div class="footer">
+      <i class="fa-regular fa-circle-user" style="color:#333;"></i>
+      Built by <strong>Demitri Burns</strong>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const IPGEO_KEY  = '8d43a98efb4d4a87ba6bc665ac6914dc';
+    const TRACK_BASE = window.location.origin + window.location.pathname.replace('ip.html','') + 't.html';
+
+    const { createClient } = supabase;
+    const db = createClient(
+      'https://xlgryiacddoxkyahgkre.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ3J5aWFjZGRveGt5YWhna3JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNzcxMjQsImV4cCI6MjA5Mjk1MzEyNH0.hwzEQC8RQkLuK0-ZUL1EQ7Dc3GhdByy7uh8ZIfEzy0w'
+    );
+
+    // ── Code boxes ────────────────────────────────────────────────────────────
+    const boxes = Array.from(document.querySelectorAll('.code-box'));
+    boxes.forEach((box, i) => {
+      box.addEventListener('input', () => {
+        const val = box.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        box.value = val.slice(-1);
+        box.classList.toggle('filled', !!box.value);
+        if (box.value && i < boxes.length - 1) boxes[i+1].focus();
+      });
+      box.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i-1].value=''; boxes[i-1].classList.remove('filled'); boxes[i-1].focus(); }
+        if (e.key === 'Enter') submitCode();
+      });
+      box.addEventListener('paste', e => {
+        e.preventDefault();
+        const text = (e.clipboardData.getData('text')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+        text.split('').forEach((c,j) => { if (i+j<boxes.length) { boxes[i+j].value=c; boxes[i+j].classList.add('filled'); } });
+        boxes[Math.min(i+text.length, boxes.length-1)].focus();
+      });
+      box.addEventListener('click', () => box.select());
+    });
+    boxes[0].focus();
+
+    let wrongAttempts = 0, locked = false;
+
+    function showMsg(id, text) {
+      const el = document.getElementById(id);
+      el.innerHTML = text ? `<i class="fa-solid fa-circle-exclamation"></i> ${text}` : '';
+      el.classList.toggle('visible', !!text);
+    }
+
+    function triggerShake(el) {
+      const t = typeof el === 'string' ? document.getElementById(el) : el;
+      t.classList.add('shake');
+      t.addEventListener('animationend', () => t.classList.remove('shake'), { once: true });
+    }
+
+    function flashIncorrect() {
+      boxes.forEach(b => b.classList.add('incorrect'));
+      setTimeout(() => boxes.forEach(b => { b.classList.remove('incorrect','filled'); b.value=''; }), 600);
+    }
+
+    function engageLockout() {
+      locked = true;
+      document.getElementById('codeBoxes').classList.add('is-locked');
+      boxes.forEach(b => { b.disabled=true; b.value=''; b.classList.remove('filled','incorrect'); });
+      const btn = document.getElementById('submitBtn');
+      btn.disabled=true; btn.classList.add('is-locked');
+      btn.innerHTML='<i class="fa-solid fa-lock"></i> Locked';
+      showMsg('error','');
+      document.getElementById('lockoutPanel').classList.add('visible');
+      setTimeout(() => document.getElementById('masterInput').focus(), 400);
+    }
+
+    function disengageLockout() {
+      locked=false; wrongAttempts=0;
+      document.getElementById('codeBoxes').classList.remove('is-locked');
+      boxes.forEach(b => { b.disabled=false; b.value=''; b.classList.remove('filled','incorrect'); });
+      const btn = document.getElementById('submitBtn');
+      btn.disabled=false; btn.classList.remove('is-locked');
+      btn.innerHTML='<i class="fa-solid fa-arrow-right-to-bracket"></i> Continue';
+      document.getElementById('lockoutPanel').classList.remove('visible');
+      document.getElementById('masterInput').value='';
+      showMsg('masterError',''); showMsg('masterStatus','');
+      boxes[0].focus();
+    }
+
+    document.getElementById('masterInput').addEventListener('keydown', e => { if (e.key==='Enter') submitMasterCode(); });
+
+    async function submitMasterCode() {
+      const input = document.getElementById('masterInput');
+      const btn   = document.getElementById('masterBtn');
+      const code  = input.value.trim().toUpperCase();
+      showMsg('masterError','');
+      if (!code) { showMsg('masterError','Please enter the master code.'); triggerShake(input); return; }
+      btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Verifying…';
+      const { data, error } = await db.from('master_codes').select('code').eq('code',code).single();
+      btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-unlock"></i> Unlock';
+      if (error||!data) { showMsg('masterError','Wrong master code.'); triggerShake(input); input.value=''; input.focus(); return; }
+      disengageLockout();
+    }
+
+    async function submitCode() {
+      if (locked) return;
+      const btn  = document.getElementById('submitBtn');
+      const code = boxes.map(b=>b.value).join('').trim().toUpperCase();
+      showMsg('error',''); showMsg('status','');
+      if (!code) { showMsg('error','Please enter your code.'); triggerShake('codeBoxes'); boxes[0].focus(); return; }
+      btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Checking…';
+      const { data, error } = await db.from('master_codes').select('code').eq('code',code).single();
+      btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-arrow-right-to-bracket"></i> Continue';
+      if (error||!data) {
+        wrongAttempts++;
+        const remaining = 3 - wrongAttempts;
+        flashIncorrect(); triggerShake('codeBoxes');
+        if (wrongAttempts >= 3) { setTimeout(() => engageLockout(), 650); }
+        else { setTimeout(() => { showMsg('error',`Invalid code — ${remaining} attempt${remaining===1?'':'s'} remaining.`); boxes[0].focus(); }, 650); }
+        return;
+      }
+      document.getElementById('passcodeView').style.display = 'none';
+      document.getElementById('card').classList.add('wide');
+      const dv = document.getElementById('dashView');
+      dv.classList.add('visible');
+      document.getElementById('ipInput').focus();
+      loadLinks();
+    }
+
+    // ── Tabs ─────────────────────────────────────────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['lookup','links'][i]===name));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id==='tab-'+name));
+    }
+
+    // ── Lookup ────────────────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.key==='Enter' && document.getElementById('tab-lookup').classList.contains('active') && document.getElementById('dashView').classList.contains('visible')) lookup();
+    });
+
+    async function lookup() {
+      const ip  = document.getElementById('ipInput').value.trim();
+      const btn = document.getElementById('lookupBtn');
+      showMsg('lookupMsg','');
+      document.getElementById('results').style.display='none';
+      btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Looking up…';
+      try {
+        const res  = await fetch(`https://api.ipgeolocation.io/ipgeo?apiKey=${IPGEO_KEY}${ip?'&ip='+encodeURIComponent(ip):''}`);
+        const data = await res.json();
+        if (data.message) throw new Error(data.message);
+        renderResults(data);
+      } catch(err) {
+        showMsg('lookupMsg', err.message||'Request failed.');
+        triggerShake('lookupBtn');
+      } finally {
+        btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-magnifying-glass"></i> Look Up';
+      }
+    }
+
+    function renderResults(d) {
+      document.getElementById('resFlag').src = d.country_flag||'';
+      document.getElementById('resIp').textContent = d.ip;
+      document.getElementById('resCountry').textContent = [d.country_name,d.country_code2].filter(Boolean).join(' · ');
+      const rows = [
+        ['City',d.city||d.district,false],['Region',d.state_prov,false],['Postal',d.zipcode,true],
+        ['Coordinates',d.latitude&&d.longitude?`${d.latitude}, ${d.longitude}`:null,true],
+        ['Timezone',d.time_zone?.name,false],
+        ['UTC Offset',d.time_zone?.offset!=null?`UTC${d.time_zone.offset>=0?'+':''}${d.time_zone.offset}`:null,true],
+        ['ISP',d.isp,false],['Organization',d.organization,false],['ASN',d.asn,true],
+        ['Currency',d.currency?.name?`${d.currency.name} (${d.currency.code})`:null,false],
+        ['Calling Code',d.calling_code?`+${d.calling_code}`:null,true],
+      ].filter(([,v])=>v);
+      document.getElementById('resGrid').innerHTML = rows.map(([l,v,m])=>`<div class="result-row"><span class="result-label">${l}</span><span class="result-value${m?' mono':''}">${v}</span></div>`).join('');
+      const el=document.getElementById('results'); el.style.display='block';
+      const lat=parseFloat(d.latitude), lng=parseFloat(d.longitude);
+      const mapEl=document.getElementById('map');
+      if (lat&&lng) {
+        mapEl.style.display='block';
+        if (window._map) { window._map.remove(); window._map=null; }
+        setTimeout(()=>{ const h=document.getElementById('results-data').offsetHeight; if(h>0) mapEl.style.minHeight=h+'px'; },50);
+        const map=L.map('map',{zoomControl:false,attributionControl:false}).setView([lat,lng],11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        L.circleMarker([lat,lng],{radius:7,color:'#fff',fillColor:'#fff',fillOpacity:1,weight:2}).addTo(map);
+        window._map=map;
+      } else { mapEl.style.display='none'; }
+    }
+
+    // ── Links ─────────────────────────────────────────────────────────────────
+    let linksCache = [];
+
+    async function loadLinks() {
+      const { data: links } = await db.from('tracking_links').select('*').order('created_at',{ascending:false});
+      if (!links) return;
+      const { data: clicks } = await db.from('tracked_clicks').select('link_id');
+      const countMap = {};
+      (clicks||[]).forEach(c => { countMap[c.link_id]=(countMap[c.link_id]||0)+1; });
+      linksCache = (links||[]).map(l=>({...l,clickCount:countMap[l.id]||0}));
+      renderLinks();
+    }
+
+    function renderLinks() {
+      const el = document.getElementById('linksList');
+      if (!linksCache.length) { el.innerHTML='<div style="font-size:0.75rem;color:#333;text-align:center;padding:20px;">No links yet.</div>'; return; }
+      el.innerHTML = linksCache.map(l => `
+        <div class="link-card" id="lc-${l.id}">
+          <div class="link-card-header" onclick="toggleClicks('${l.id}')">
+            <span class="link-name">${l.name}</span>
+            <span class="link-meta">${l.clickCount} click${l.clickCount===1?'':'s'}</span>
+            <div class="link-actions" onclick="event.stopPropagation()">
+              <button class="btn-sm btn-ghost" onclick="copyLink('${l.id}')" title="Copy link"><i class="fa-solid fa-copy"></i></button>
+              <button class="btn-sm btn-danger" onclick="deleteLink('${l.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </div>
+          <div class="link-url-row">
+            <span class="link-url">${TRACK_BASE}?id=${l.id}</span>
+          </div>
+          <div class="clicks-table" id="ct-${l.id}"></div>
+        </div>`).join('');
+    }
+
+    async function toggleClicks(id) {
+      const ct = document.getElementById('ct-'+id);
+      if (ct.classList.contains('open')) { ct.classList.remove('open'); return; }
+      ct.innerHTML = '<div class="clicks-empty">Loading…</div>';
+      ct.classList.add('open');
+      const { data: clicks } = await db.from('tracked_clicks').select('*').eq('link_id',id).order('created_at',{ascending:false}).limit(50);
+      if (!clicks||!clicks.length) { ct.innerHTML='<div class="clicks-empty">No clicks yet.</div>'; return; }
+      ct.innerHTML = `
+        <div class="clicks-header"><span>IP</span><span>Location</span><span>ISP</span><span>Time</span></div>
+        ${clicks.map(c=>`
+          <div class="click-row">
+            <span class="click-ip">${c.ip||'—'}</span>
+            <span class="click-loc">${[c.city,c.country].filter(Boolean).join(', ')||'—'}</span>
+            <span class="click-isp">${c.isp||'—'}</span>
+            <span class="click-time">${fmtTime(c.created_at)}</span>
+          </div>`).join('')}`;
+    }
+
+    async function createLink() {
+      const name     = document.getElementById('linkName').value.trim();
+      const redirect = document.getElementById('linkRedirect').value.trim();
+      const btn      = document.getElementById('createLinkBtn');
+      showMsg('linkMsg','');
+      if (!name)     { showMsg('linkMsg','Enter a name.'); return; }
+      if (!redirect) { showMsg('linkMsg','Enter a redirect URL.'); return; }
+      btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+      const { error } = await db.from('tracking_links').insert([{name, redirect_url: redirect}]);
+      btn.disabled=false; btn.innerHTML='<i class="fa-solid fa-plus"></i> Create';
+      if (error) { showMsg('linkMsg', error.message); return; }
+      document.getElementById('linkName').value='';
+      document.getElementById('linkRedirect').value='';
+      await loadLinks();
+    }
+
+    async function deleteLink(id) {
+      if (!confirm('Delete this link and all its click data?')) return;
+      await db.from('tracking_links').delete().eq('id',id);
+      await loadLinks();
+    }
+
+    function copyLink(id) {
+      navigator.clipboard.writeText(`${TRACK_BASE}?id=${id}`);
+      const btn = document.querySelector(`#lc-${id} .btn-ghost`);
+      if (btn) { btn.innerHTML='<i class="fa-solid fa-check"></i>'; setTimeout(()=>{ btn.innerHTML='<i class="fa-solid fa-copy"></i>'; },1500); }
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts), now = new Date(), diff = now-d;
+      const m=Math.floor(diff/60000), h=Math.floor(diff/3600000), day=Math.floor(diff/86400000);
+      if (m<1) return 'just now';
+      if (m<60) return `${m}m ago`;
+      if (h<24) return `${h}h ago`;
+      return `${day}d ago`;
+    }
+  </script>
+</body>
+</html>
