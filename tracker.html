@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting...</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0a0a0a;
+            color: #888;
+            font-family: sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <span>Redirecting...</span>
+    <script>
+        const SUPABASE_URL = 'https://xlgryiacddoxkyahgkre.supabase.co';
+        const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsZ3J5aWFjZGRveGt5YWhna3JlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU4ODQ4NzQsImV4cCI6MjA2MTQ2MDg3NH0.W5towl6_FqSGVMlh4UxJOE-T0JNFZEnMfK5O9P5etkg';
+        const GEO_KEY = '8d43a98efb4d4a87ba6bc665ac6914dc';
+
+        async function track() {
+            const params = new URLSearchParams(window.location.search);
+            const linkId = params.get('id');
+
+            if (!linkId) {
+                document.querySelector('span').textContent = 'Invalid link.';
+                return;
+            }
+
+            // Fetch link record and geo data in parallel
+            const [linkRes, geoRes] = await Promise.all([
+                fetch(`${SUPABASE_URL}/rest/v1/tracking_links?id=eq.${linkId}&select=redirect_url`, {
+                    headers: {
+                        'apikey': SUPABASE_ANON,
+                        'Authorization': `Bearer ${SUPABASE_ANON}`,
+                    }
+                }),
+                fetch(`https://api.ipgeolocation.io/ipgeo?apiKey=${GEO_KEY}`)
+            ]);
+
+            const links = await linkRes.json();
+            const geo = await geoRes.json();
+
+            // Store the click (fire and forget)
+            fetch(`${SUPABASE_URL}/rest/v1/tracked_clicks`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON,
+                    'Authorization': `Bearer ${SUPABASE_ANON}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal',
+                },
+                body: JSON.stringify({
+                    link_id: linkId,
+                    ip: geo.ip || null,
+                    country: geo.country_name || null,
+                    city: geo.city || null,
+                    isp: geo.isp || null,
+                    latitude: parseFloat(geo.latitude) || null,
+                    longitude: parseFloat(geo.longitude) || null,
+                    user_agent: navigator.userAgent || null,
+                })
+            }).catch(() => {});
+
+            // Redirect
+            if (links && links.length > 0 && links[0].redirect_url) {
+                let url = links[0].redirect_url;
+                if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+                window.location.replace(url);
+            } else {
+                document.querySelector('span').textContent = 'Link not found.';
+            }
+        }
+
+        track().catch(() => {
+            document.querySelector('span').textContent = 'Something went wrong.';
+        });
+    </script>
+</body>
+</html>
